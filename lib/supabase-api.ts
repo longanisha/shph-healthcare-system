@@ -146,7 +146,13 @@ export const login = async (credentials: LoginRequest): Promise<LoginResponse> =
     .single()
 
   if (userError) {
-    throw new Error('Failed to get user role')
+    // If user doesn't exist in our users table, create a default role
+    console.warn('User not found in users table, using default role')
+    return {
+      accessToken: data.session?.access_token || '',
+      refreshToken: data.session?.refresh_token || '',
+      role: 'PATIENT' as any // Default role
+    }
   }
 
   return {
