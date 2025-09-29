@@ -121,6 +121,10 @@ const convertEmergencyAlertRow = (row: EmergencyAlertRow): EmergencyAlert => ({
 
 // Authentication API
 export const login = async (credentials: LoginRequest): Promise<LoginResponse> => {
+  if (!supabase) {
+    throw new Error('Supabase not configured')
+  }
+
   const { data, error } = await supabase.auth.signInWithPassword({
     email: credentials.email,
     password: credentials.password,
@@ -153,6 +157,10 @@ export const login = async (credentials: LoginRequest): Promise<LoginResponse> =
 }
 
 export const logout = async (): Promise<void> => {
+  if (!supabase) {
+    throw new Error('Supabase not configured')
+  }
+  
   const { error } = await supabase.auth.signOut()
   if (error) {
     throw new Error(error.message)

@@ -3,8 +3,8 @@ import { mockApi } from "./mock-api"
 import * as supabaseApi from "./supabase-api"
 
 // Use environment variable to determine if we should use mock API or Supabase
-const USE_MOCK_API = process.env.NODE_ENV === "development" && !process.env.NEXT_PUBLIC_SUPABASE_URL
-const USE_SUPABASE = !!process.env.NEXT_PUBLIC_SUPABASE_URL
+const USE_MOCK_API = !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL === ''
+const USE_SUPABASE = !!process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_URL !== ''
 
 // Token management functions for compatibility
 export const setTokens = (newAccessToken: string, newRefreshToken: string) => {
