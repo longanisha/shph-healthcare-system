@@ -652,8 +652,7 @@ export const getPatientMedications = async (patientId: string): Promise<Medicati
     .from('medications')
     .select('*')
     .eq('patient_id', patientId)
-    .eq('is_active', true)
-    .order('prescribed_date', { ascending: false })
+    .order('start_date', { ascending: false })
 
   if (error) {
     throw new Error(error.message)
@@ -671,7 +670,7 @@ export const getPatientVitalSigns = async (patientId: string): Promise<VitalSign
     .from('vital_signs')
     .select('*')
     .eq('patient_id', patientId)
-    .order('recorded_date', { ascending: false })
+    .order('recorded_at', { ascending: false })
 
   if (error) {
     throw new Error(error.message)
@@ -799,11 +798,11 @@ const convertMedicationRow = (row: any): Medication => ({
   name: row.name,
   dosage: row.dosage,
   frequency: row.frequency,
-  duration: row.duration,
+  duration: row.end_date ? `${Math.ceil((new Date(row.end_date).getTime() - new Date(row.start_date).getTime()) / (1000 * 60 * 60 * 24))} days` : 'Ongoing',
   prescribedBy: row.prescribed_by,
-  prescribedDate: row.prescribed_date,
-  remainingDays: row.remaining_days,
-  isActive: row.is_active,
+  prescribedDate: row.start_date,
+  remainingDays: row.end_date ? Math.max(0, Math.ceil((new Date(row.end_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))) : 30,
+  isActive: !row.end_date || new Date(row.end_date) > new Date(),
   notes: row.notes,
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at)
@@ -812,7 +811,7 @@ const convertMedicationRow = (row: any): Medication => ({
 const convertVitalSignsRow = (row: any): VitalSigns => ({
   id: row.id,
   patientId: row.patient_id,
-  recordedDate: row.recorded_date,
+  recordedDate: row.recorded_at ? new Date(row.recorded_at).toISOString().split('T')[0] : new Date(row.created_at).toISOString().split('T')[0],
   temperature: row.temperature,
   bloodPressureSystolic: row.blood_pressure_systolic,
   bloodPressureDiastolic: row.blood_pressure_diastolic,
