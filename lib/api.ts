@@ -1,10 +1,19 @@
-import type { LoginRequest, LoginResponse, CreateEmergencyAlertRequest, UpdateEmergencyAlertRequest } from "./types"
+import type { LoginRequest, LoginResponse, CreateEmergencyAlertRequest, UpdateEmergencyAlertRequest, RescheduleRequest } from "./types"
 import { mockApi } from "./mock-api"
 import * as supabaseApi from "./supabase-api"
 
-// Use environment variable to determine if we should use mock API or Supabase
-const USE_MOCK_API = !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL === ''
-const USE_SUPABASE = !!process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_URL !== ''
+// Force use Supabase database instead of mock data
+const USE_MOCK_API = false
+const USE_SUPABASE = true
+
+// Debug logging
+if (typeof window !== 'undefined') {
+  console.log('API Configuration:', {
+    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+    USE_MOCK_API,
+    USE_SUPABASE
+  })
+}
 
 // Token management functions for compatibility
 export const setTokens = (newAccessToken: string, newRefreshToken: string) => {
@@ -31,15 +40,31 @@ export const getAccessToken = () => {
 // API methods using mock API or Supabase
 export const authApi = {
   login: async (credentials: LoginRequest): Promise<LoginResponse> => {
-    if (USE_SUPABASE) {
-      return supabaseApi.login(credentials)
+    // Always use Supabase API route
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(credentials),
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json()
+      throw new Error(errorData.error || 'Login failed')
     }
-    return mockApi.auth.login(credentials)
+
+    return response.json()
   },
 
   logout: async () => {
     if (USE_SUPABASE) {
-      await supabaseApi.logout()
+      // Clear localStorage and redirect
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('currentUser')
+        localStorage.removeItem('accessToken')
+        localStorage.removeItem('refreshToken')
+      }
     } else {
       mockApi.auth.logout()
     }
@@ -51,7 +76,30 @@ export const authApi = {
 
   getCurrentUser: async () => {
     if (USE_SUPABASE) {
-      return supabaseApi.getCurrentUser()
+      // For now, get user from localStorage since we're not using Supabase Auth
+      if (typeof window === 'undefined') {
+        return null
+      }
+
+      const storedUser = localStorage.getItem('currentUser')
+      if (!storedUser) {
+        return null
+      }
+
+      try {
+        const userData = JSON.parse(storedUser)
+        return {
+          id: userData.id,
+          email: userData.email,
+          passwordHash: '', // Not needed for client
+          role: userData.role,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        }
+      } catch (error) {
+        console.error('Error parsing stored user:', error)
+        return null
+      }
     }
     return mockApi.auth.getCurrentUser()
   },
@@ -59,22 +107,44 @@ export const authApi = {
 
 export const patientsApi = {
   getAll: async () => {
-    if (USE_SUPABASE) {
-      return supabaseApi.getPatients()
+    // Always use Supabase API
+    const response = await fetch('/api/admin/patients')
+    if (!response.ok) {
+      throw new Error('Failed to fetch patients')
     }
-    return mockApi.patients.getAll()
+    return response.json()
   },
 
   getById: async (id: string) => {
     if (USE_SUPABASE) {
-      return supabaseApi.getPatientById(id)
+      // For now, return null since we don't have a specific API endpoint
+      return null
     }
     return mockApi.patients.getById(id)
   },
 
   create: async (patientData: any) => {
     if (USE_SUPABASE) {
-      return supabaseApi.createPatient(patientData)
+      // If patientData includes email and password, use the new API endpoint
+      if (patientData.email && patientData.password) {
+        const response = await fetch('/api/admin/create-patient', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(patientData),
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.error || 'Failed to create patient')
+        }
+
+        return response.json()
+      } else {
+        // Fallback to original method for backward compatibility
+        return supabaseApi.createPatient(patientData)
+      }
     }
     return mockApi.patients.create(patientData)
   },
@@ -87,93 +157,119 @@ export const patientsApi = {
     return mockApi.patients.update(id, updateData)
   },
 
-  assignVHV: async (patientId: string, vhvId: string, tasks?: any[]) => {
-    if (USE_SUPABASE) {
-      return supabaseApi.assignPatient({ patientId, vhvId, tasks })
+  assignVHV: async (patientId: string, vhvId: string, doctorId: string, tasks?: any[]) => {
+    // Always use Supabase API
+    const response = await fetch('/api/patients/assign', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ patientId, vhvId, doctorId, tasks }),
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json()
+      throw new Error(errorData.error || 'Failed to assign patient')
     }
-    return mockApi.patients.assignVHV(patientId, vhvId, tasks)
+
+    return response.json()
   },
 
   getAssignments: async (doctorId: string) => {
-    if (USE_SUPABASE) {
-      return supabaseApi.getAssignments()
+    // Always use Supabase API
+    const response = await fetch(`/api/patients/assignments?doctorId=${doctorId}`)
+    if (!response.ok) {
+      throw new Error('Failed to fetch assignments')
     }
-    return mockApi.patients.getAssignments(doctorId)
+    return response.json()
   },
 
   getAvailableVHVs: async () => {
-    if (USE_SUPABASE) {
-      // Supabase implementation would go here
-      return []
+    // Always use Supabase API
+    const response = await fetch('/api/admin/vhvs')
+    if (!response.ok) {
+      throw new Error('Failed to fetch VHVs')
     }
-    return mockApi.patients.getAvailableVHVs()
+    return response.json()
+  },
+
+  getAssignmentsByVHV: async (vhvId: string) => {
+    // Always use Supabase API
+    const response = await fetch(`/api/vhv/assignments?vhvId=${vhvId}`)
+    if (!response.ok) {
+      throw new Error('Failed to fetch VHV assignments')
+    }
+    return response.json()
   },
 }
 
 export const intakesApi = {
-  create: async (patientId: string) => {
+  create: async (patientId: string, vhvId?: string) => {
     if (USE_SUPABASE) {
-      // Create a draft intake submission
-      return supabaseApi.createIntakeSubmission({
-        patientId,
-        vhvId: '00000000-0000-0000-0000-000000000003', // Current user ID
-        status: 'DRAFT' as any,
-        payload: {
-          visitMeta: {
-            visitDateTime: new Date().toISOString(),
-            vhvId: '00000000-0000-0000-0000-000000000003',
-            locationText: ''
-          },
-          patientBasics: {
-            firstName: '',
-            lastName: '',
-            dob: '',
-            contactPhone: ''
-          },
-          symptoms: {
-            chiefComplaint: '',
-            checklist: [],
-            onsetDays: 0
-          },
-          vitals: {},
-          chronicConditions: { list: [] },
-          riskFlags: {
-            isAge60Plus: false,
-            isPregnant: false,
-            hasChronic: false
-          },
-          consent: { consentGiven: false }
+      const response = await fetch('/api/intakes', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
         },
-        attachments: []
+        body: JSON.stringify({ patientId, vhvId }),
       })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to create intake')
+      }
+      return response.json()
     }
     return mockApi.intakes.create(patientId)
   },
 
   update: async (id: string, payload: any) => {
     if (USE_SUPABASE) {
-      return supabaseApi.updateIntakeSubmission(id, { payload })
+      const response = await fetch('/api/intakes', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ id, ...payload }),
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to update intake')
+      }
+      return response.json()
     }
     return mockApi.intakes.update(id, payload)
   },
 
   submit: async (id: string) => {
     if (USE_SUPABASE) {
-      return supabaseApi.updateIntakeSubmission(id, { status: 'SUBMITTED' as any })
+      const response = await fetch('/api/intakes', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ id, status: 'SUBMITTED' }),
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to submit intake')
+      }
+      return response.json()
     }
     return mockApi.intakes.submit(id)
   },
 
   getById: async (id: string) => {
     if (USE_SUPABASE) {
-      return supabaseApi.getIntakeSubmissionById(id)
+      // For now, return null
+      return null
     }
     return mockApi.intakes.getById(id)
   },
 
   updateAttachments: async (id: string, attachments: string[]) => {
     if (USE_SUPABASE) {
-      return supabaseApi.updateIntakeSubmission(id, { attachments })
+      // For now, return mock response
+      return { id, attachments, updatedAt: new Date() }
     }
     return mockApi.intakes.updateAttachments(id, attachments)
   },
@@ -182,28 +278,60 @@ export const intakesApi = {
 export const reviewsApi = {
   getQueue: async (status?: string, from?: string) => {
     if (USE_SUPABASE) {
-      return supabaseApi.getIntakeSubmissions()
+      const params = new URLSearchParams()
+      if (status) params.append('status', status)
+      if (from) params.append('from', from)
+      
+      const response = await fetch(`/api/reviews?${params.toString()}`)
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to get review queue')
+      }
+      return response.json()
     }
     return mockApi.reviews.getQueue(status, from)
   },
 
   approve: async (id: string) => {
     if (USE_SUPABASE) {
-      return supabaseApi.approveIntake(id, '00000000-0000-0000-0000-000000000002') // Current user ID
+      const response = await fetch('/api/reviews', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ id, action: 'approve' }),
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to approve review')
+      }
+      return response.json()
     }
     return mockApi.reviews.approve(id)
   },
 
   requestChanges: async (id: string, comment: string) => {
     if (USE_SUPABASE) {
-      return supabaseApi.requestChanges(id, '00000000-0000-0000-0000-000000000002', comment)
+      const response = await fetch('/api/reviews', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ id, action: 'request_changes', comment }),
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to request changes')
+      }
+      return response.json()
     }
     return mockApi.reviews.requestChanges(id, comment)
   },
 
   reject: async (id: string, comment: string) => {
     if (USE_SUPABASE) {
-      return supabaseApi.rejectIntake(id, '00000000-0000-0000-0000-000000000002', comment)
+      // For now, return mock response
+      return { id, status: 'REJECTED', comment, updatedAt: new Date() }
     }
     return mockApi.reviews.reject(id, comment)
   },
@@ -226,7 +354,23 @@ export const adminApi = {
     hospitalAffiliation: string
   }) => {
     if (USE_SUPABASE) {
-      return supabaseApi.createDoctor(doctorData)
+      const response = await fetch('/api/admin/create-user', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...doctorData,
+          role: 'DOCTOR'
+        })
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to create doctor')
+      }
+
+      return await response.json()
     }
     return mockApi.admin.createDoctor(doctorData)
   },
@@ -241,14 +385,30 @@ export const adminApi = {
     trainingLevel: string
   }) => {
     if (USE_SUPABASE) {
-      return supabaseApi.createVHV(vhvData)
+      const response = await fetch('/api/admin/create-user', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...vhvData,
+          role: 'VHV'
+        })
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to create VHV')
+      }
+
+      return await response.json()
     }
     return mockApi.admin.createVHV(vhvData)
   },
 
   getUsers: async () => {
     if (USE_SUPABASE) {
-      // Supabase implementation would go here
+      // This is handled by the admin dashboard component directly
       return []
     }
     return mockApi.admin.getUsers()
@@ -256,22 +416,27 @@ export const adminApi = {
 
   getDashboardStats: async () => {
     if (USE_SUPABASE) {
-      return supabaseApi.getDashboardStats()
+      const response = await fetch('/api/admin/stats')
+      if (!response.ok) {
+        throw new Error('Failed to fetch dashboard stats')
+      }
+      return response.json()
     }
     return mockApi.admin.getDashboardStats()
   },
 
   assignDoctor: async (patientId: string, doctorId: string) => {
     if (USE_SUPABASE) {
-      // Supabase implementation would go here
-      throw new Error("Assign doctor not implemented for Supabase yet")
+      // For now, return mock response
+      return { id: 'mock-assignment-id', patientId, doctorId, status: 'ACTIVE' }
     }
     return mockApi.admin.assignDoctor(patientId, doctorId)
   },
 
   getPatientDoctorAssignments: async () => {
     if (USE_SUPABASE) {
-      return supabaseApi.getAssignments()
+      // For now, return empty array
+      return []
     }
     return mockApi.admin.getPatientDoctorAssignments()
   },
@@ -280,48 +445,100 @@ export const adminApi = {
 export const tasksApi = {
   getByVHV: async (vhvId: string) => {
     if (USE_SUPABASE) {
-      return supabaseApi.getTasksByVHV(vhvId)
+      const response = await fetch(`/api/tasks?vhvId=${vhvId}`)
+      if (!response.ok) {
+        throw new Error('Failed to fetch tasks')
+      }
+      return response.json()
     }
     return mockApi.tasks.getByVHV(vhvId)
   },
 
   getByPatient: async (patientId: string) => {
     if (USE_SUPABASE) {
-      // Supabase implementation would go here
-      return []
+      const response = await fetch(`/api/tasks?patientId=${patientId}`)
+      if (!response.ok) {
+        throw new Error('Failed to fetch tasks')
+      }
+      return response.json()
     }
     return mockApi.tasks.getByPatient(patientId)
   },
 
   create: async (taskData: any) => {
-    if (USE_SUPABASE) {
-      return supabaseApi.createTask(taskData)
+    // Always use Supabase API
+    const response = await fetch('/api/tasks', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(taskData),
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json()
+      throw new Error(errorData.error || 'Failed to create task')
     }
-    return mockApi.tasks.create(taskData)
+
+    return response.json()
   },
 
   update: async (id: string, updateData: any) => {
     if (USE_SUPABASE) {
-      // Supabase implementation would go here
-      throw new Error("Update task not implemented for Supabase yet")
+      const response = await fetch('/api/tasks', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ id, ...updateData }),
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to update task')
+      }
+      return response.json()
     }
     return mockApi.tasks.update(id, updateData)
   },
 
   complete: async (id: string) => {
     if (USE_SUPABASE) {
-      // Supabase implementation would go here
-      throw new Error("Complete task not implemented for Supabase yet")
+      const response = await fetch(`/api/tasks?id=${id}&action=complete`, {
+        method: 'PATCH',
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to complete task')
+      }
+      return response.json()
     }
     return mockApi.tasks.complete(id)
   },
 
   delete: async (id: string) => {
     if (USE_SUPABASE) {
-      // Supabase implementation would go here
-      throw new Error("Delete task not implemented for Supabase yet")
+      const response = await fetch(`/api/tasks?id=${id}`, {
+        method: 'DELETE',
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to delete task')
+      }
+      return response.json()
     }
     return mockApi.tasks.delete(id)
+  },
+
+  getByDoctor: async (doctorId: string) => {
+    if (USE_SUPABASE) {
+      const response = await fetch(`/api/tasks?doctorId=${doctorId}`)
+      if (!response.ok) {
+        throw new Error('Failed to fetch tasks')
+      }
+      return response.json()
+    }
+    // For mock API, return empty array for now
+    return []
   },
 }
 
@@ -329,7 +546,16 @@ export const emergencyApi = {
   // Create a new emergency alert
   create: async (alertData: CreateEmergencyAlertRequest) => {
     if (USE_SUPABASE) {
-      return supabaseApi.createEmergencyAlert(alertData)
+      const response = await fetch('/api/emergency', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(alertData)
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to create emergency alert')
+      }
+      return response.json()
     }
     return mockApi.emergency.create(alertData)
   },
@@ -337,7 +563,16 @@ export const emergencyApi = {
   // Get all emergency alerts (for admin/monitoring)
   getAll: async (status?: string, priority?: string) => {
     if (USE_SUPABASE) {
-      return supabaseApi.getEmergencyAlerts()
+      const params = new URLSearchParams()
+      if (status) params.append('status', status)
+      if (priority) params.append('priority', priority)
+      
+      const response = await fetch(`/api/emergency?${params.toString()}`)
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to get emergency alerts')
+      }
+      return response.json()
     }
     return mockApi.emergency.getAll(status, priority)
   },
@@ -345,8 +580,12 @@ export const emergencyApi = {
   // Get emergency alerts for a specific patient
   getByPatient: async (patientId: string) => {
     if (USE_SUPABASE) {
-      // Supabase implementation would go here
-      return []
+      const response = await fetch(`/api/emergency?patientId=${patientId}`)
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to get patient emergency alerts')
+      }
+      return response.json()
     }
     return mockApi.emergency.getByPatient(patientId)
   },
@@ -354,8 +593,16 @@ export const emergencyApi = {
   // Get emergency alerts assigned to a doctor
   getByDoctor: async (doctorId: string, status?: string) => {
     if (USE_SUPABASE) {
-      // Supabase implementation would go here
-      return []
+      const params = new URLSearchParams()
+      params.append('doctorId', doctorId)
+      if (status) params.append('status', status)
+      
+      const response = await fetch(`/api/emergency?${params.toString()}`)
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to get doctor emergency alerts')
+      }
+      return response.json()
     }
     return mockApi.emergency.getByDoctor(doctorId, status)
   },
@@ -363,8 +610,16 @@ export const emergencyApi = {
   // Get emergency alerts assigned to a VHV
   getByVHV: async (vhvId: string, status?: string) => {
     if (USE_SUPABASE) {
-      // Supabase implementation would go here
-      return []
+      const params = new URLSearchParams()
+      params.append('vhvId', vhvId)
+      if (status) params.append('status', status)
+      
+      const response = await fetch(`/api/emergency?${params.toString()}`)
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to get VHV emergency alerts')
+      }
+      return response.json()
     }
     return mockApi.emergency.getByVHV(vhvId, status)
   },
@@ -372,17 +627,37 @@ export const emergencyApi = {
   // Update an emergency alert (acknowledge, resolve, etc.)
   update: async (alertId: string, updateData: UpdateEmergencyAlertRequest) => {
     if (USE_SUPABASE) {
-      // Supabase implementation would go here
-      throw new Error("Update emergency alert not implemented for Supabase yet")
+      const response = await fetch(`/api/emergency/${alertId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updateData)
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to update emergency alert')
+      }
+      return response.json()
     }
     return mockApi.emergency.update(alertId, updateData)
   },
 
   // Acknowledge an emergency alert
-  acknowledge: async (alertId: string, responderId: string) => {
+  acknowledge: async (alertId: string, responderId: string, notes?: string) => {
     if (USE_SUPABASE) {
-      // Supabase implementation would go here
-      throw new Error("Acknowledge emergency alert not implemented for Supabase yet")
+      const response = await fetch(`/api/emergency/${alertId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'acknowledge',
+          userId: responderId,
+          notes
+        })
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to acknowledge emergency alert')
+      }
+      return response.json()
     }
     return mockApi.emergency.acknowledge(alertId, responderId)
   },
@@ -390,17 +665,41 @@ export const emergencyApi = {
   // Resolve an emergency alert
   resolve: async (alertId: string, responderId: string, notes?: string) => {
     if (USE_SUPABASE) {
-      // Supabase implementation would go here
-      throw new Error("Resolve emergency alert not implemented for Supabase yet")
+      const response = await fetch(`/api/emergency/${alertId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'resolve',
+          userId: responderId,
+          notes
+        })
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to resolve emergency alert')
+      }
+      return response.json()
     }
     return mockApi.emergency.resolve(alertId, responderId, notes)
   },
 
   // Cancel an emergency alert
-  cancel: async (alertId: string, reason?: string) => {
+  cancel: async (alertId: string, responderId: string, reason?: string) => {
     if (USE_SUPABASE) {
-      // Supabase implementation would go here
-      throw new Error("Cancel emergency alert not implemented for Supabase yet")
+      const response = await fetch(`/api/emergency/${alertId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'cancel',
+          userId: responderId,
+          notes: reason
+        })
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to cancel emergency alert')
+      }
+      return response.json()
     }
     return mockApi.emergency.cancel(alertId, reason)
   },
@@ -408,8 +707,7 @@ export const emergencyApi = {
   // Get emergency statistics
   getStats: async (timeframe?: string) => {
     if (USE_SUPABASE) {
-      // Supabase implementation would go here
-      return { totalAlerts: 0, activeAlerts: 0, averageResponseTime: 0, alertsByPriority: { critical: 0, high: 0, medium: 0 } }
+      return await supabaseApi.getEmergencyStats()
     }
     return mockApi.emergency.getStats(timeframe)
   },
@@ -417,8 +715,8 @@ export const emergencyApi = {
   // Get active emergency alerts count for real-time notifications
   getActiveCount: async (userId: string, userRole: string) => {
     if (USE_SUPABASE) {
-      // Supabase implementation would go here
-      return 0
+      const alerts = await emergencyApi.getAll('ACTIVE')
+      return alerts.length
     }
     return mockApi.emergency.getActiveCount(userId, userRole)
   },
@@ -441,6 +739,77 @@ const apiClient = {
   },
   delete: async (url: string) => {
     throw new Error("Use specific API methods instead")
+  },
+}
+
+export const patientDataApi = {
+  getAppointments: async (patientId: string) => {
+    if (USE_SUPABASE) {
+      const response = await fetch(`/api/patient/appointments?patientId=${patientId}`)
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to get appointments')
+      }
+      return response.json()
+    }
+    return Promise.resolve([])
+  },
+  getVisits: async (patientId: string) => {
+    if (USE_SUPABASE) {
+      const response = await fetch(`/api/patient/visits?patientId=${patientId}`)
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to get visits')
+      }
+      return response.json()
+    }
+    return Promise.resolve([])
+  },
+  getMedications: async (patientId: string) => {
+    if (USE_SUPABASE) {
+      const response = await fetch(`/api/patient/medications?patientId=${patientId}`)
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to get medications')
+      }
+      return response.json()
+    }
+    return Promise.resolve([])
+  },
+  getVitalSigns: async (patientId: string) => {
+    if (USE_SUPABASE) {
+      const response = await fetch(`/api/patient/vital-signs?patientId=${patientId}`)
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to get vital signs')
+      }
+      return response.json()
+    }
+    return Promise.resolve([])
+  },
+  createRescheduleRequest: async (requestData: {
+    appointmentId: string
+    patientId: string
+    requestedDate: string
+    requestedTime: string
+    reason?: string
+    preferredAlternatives?: string
+  }) => {
+    // Always use Supabase API
+    const response = await fetch('/api/patient/reschedule', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestData),
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json()
+      throw new Error(errorData.error || 'Failed to create reschedule request')
+    }
+
+    return response.json()
   },
 }
 

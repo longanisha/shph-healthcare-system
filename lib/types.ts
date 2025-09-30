@@ -238,6 +238,7 @@ export interface LoginResponse {
   accessToken: string
   refreshToken: string
   role: UserRole
+  userId?: string
 }
 
 export interface RefreshRequest {
@@ -283,6 +284,7 @@ export interface CreateTaskRequest {
   description: string
   patientId: string
   vhvId: string
+  doctorId: string
   priority: "LOW" | "MEDIUM" | "HIGH" | "URGENT"
   dueDate?: string
 }
@@ -290,6 +292,7 @@ export interface CreateTaskRequest {
 export interface AssignPatientRequest {
   patientId: string
   vhvId: string
+  doctorId?: string
   tasks?: CreateTaskRequest[]
 }
 
@@ -303,6 +306,11 @@ export interface CreateEmergencyAlertRequest {
 
 export interface UpdateEmergencyAlertRequest {
   status?: EmergencyStatus
+  priority?: EmergencyPriority
+  description?: string
+  location?: string
+  assignedDoctorId?: string
+  assignedVHVId?: string
   acknowledgedBy?: string
   resolvedBy?: string
   notes?: string
@@ -317,4 +325,79 @@ export interface EmergencyStatsResponse {
     high: number
     medium: number
   }
+}
+
+// Patient-specific types
+export interface Appointment {
+  id: string
+  patientId: string
+  providerId: string
+  providerName: string
+  type: string
+  scheduledDate: string
+  scheduledTime: string
+  location: string
+  status: 'scheduled' | 'completed' | 'cancelled' | 'rescheduled'
+  notes?: string
+  createdAt: Date
+  updatedAt: Date
+}
+
+export interface Visit {
+  id: string
+  patientId: string
+  providerId: string
+  providerName: string
+  visitDate: string
+  diagnosis?: string
+  treatment?: string
+  notes?: string
+  status: 'completed' | 'in_progress' | 'cancelled'
+  createdAt: Date
+  updatedAt: Date
+}
+
+export interface Medication {
+  id: string
+  patientId: string
+  name: string
+  dosage: string
+  frequency: string
+  duration: string
+  prescribedBy?: string
+  prescribedDate: string
+  remainingDays: number
+  isActive: boolean
+  notes?: string
+  createdAt: Date
+  updatedAt: Date
+}
+
+export interface VitalSigns {
+  id: string
+  patientId: string
+  recordedDate: string
+  temperature?: number
+  bloodPressureSystolic?: number
+  bloodPressureDiastolic?: number
+  heartRate?: number
+  weight?: number
+  height?: number
+  notes?: string
+  recordedBy?: string
+  createdAt: Date
+}
+
+export interface RescheduleRequest {
+  id: string
+  appointmentId: string
+  patientId: string
+  requestedDate: string
+  requestedTime: string
+  reason?: string
+  preferredAlternatives?: string
+  status: 'pending' | 'approved' | 'rejected'
+  reviewedBy?: string
+  reviewedAt?: Date
+  createdAt: Date
 }

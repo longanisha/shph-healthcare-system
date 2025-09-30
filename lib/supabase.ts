@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js'
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
+
 // Create Supabase client only if environment variables are available
 export const supabase = supabaseUrl && supabaseAnonKey 
   ? createClient(supabaseUrl, supabaseAnonKey, {
@@ -23,7 +24,6 @@ export interface Database {
         Row: {
           id: string
           email: string
-          password_hash: string
           role: 'ADMIN' | 'DOCTOR' | 'VHV' | 'PATIENT'
           created_at: string
           updated_at: string
@@ -31,7 +31,6 @@ export interface Database {
         Insert: {
           id?: string
           email: string
-          password_hash: string
           role: 'ADMIN' | 'DOCTOR' | 'VHV' | 'PATIENT'
           created_at?: string
           updated_at?: string
@@ -39,7 +38,6 @@ export interface Database {
         Update: {
           id?: string
           email?: string
-          password_hash?: string
           role?: 'ADMIN' | 'DOCTOR' | 'VHV' | 'PATIENT'
           created_at?: string
           updated_at?: string

@@ -52,10 +52,20 @@ export function DoctorDashboard() {
   const [currentUser, setCurrentUser] = useState(getCurrentUserFromStorage())
   const [activeEmergencyCount, setActiveEmergencyCount] = useState(0)
 
+  // Check and fix user ID if it's a hardcoded string
+  useEffect(() => {
+    if (currentUser?.id && (currentUser.id === 'doctor_id' || currentUser.id === 'admin_id' || currentUser.id === 'vhv_id' || currentUser.id === 'patient_id')) {
+      console.log('Detected hardcoded user ID, clearing localStorage and redirecting to login')
+      clearCurrentUser()
+      router.push('/login')
+    }
+  }, [currentUser?.id, router])
+
   // Memoize API call functions to prevent infinite re-renders
   const getReviewQueue = useCallback(() => reviewsApi.getQueue(), [])
   const getApprovedReviews = useCallback(() => reviewsApi.getQueue("APPROVED"), [])
   const getAllPatients = useCallback(() => patientsApi.getAll(), [])
+  const getAvailableVHVs = useCallback(() => patientsApi.getAvailableVHVs(), [])
 
   // API data hooks for pending reviews
   const {
@@ -80,6 +90,13 @@ export function DoctorDashboard() {
     refetch: refetchPatients,
   } = useApiData(getAllPatients, [])
 
+  const {
+    data: availableVHVs,
+    loading: vhvsLoading,
+    error: vhvsError,
+    refetch: refetchVHVs,
+  } = useApiData(getAvailableVHVs, [])
+
   // Local state for forms and UI
   const [showAddPatientDialog, setShowAddPatientDialog] = useState(false)
   const [showNewVisitDialog, setShowNewVisitDialog] = useState(false)
@@ -93,6 +110,15 @@ export function DoctorDashboard() {
     address: "",
     phone: "",
     nationalId: "",
+    email: "",
+    password: "",
+  })
+
+  const [newVisitForm, setNewVisitForm] = useState({
+    patientId: "",
+    visitType: "",
+    vhvId: "",
+    notes: "",
   })
 
   useEffect(() => {
@@ -136,7 +162,7 @@ export function DoctorDashboard() {
   }
 
   const handleAddPatient = useCallback(async () => {
-    if (newPatientForm.firstName && newPatientForm.lastName && newPatientForm.dob) {
+    if (newPatientForm.firstName && newPatientForm.lastName && newPatientForm.dob && newPatientForm.email && newPatientForm.password) {
       try {
         const newPatient = await patientsApi.create({
           firstName: newPatientForm.firstName,
@@ -145,6 +171,8 @@ export function DoctorDashboard() {
           address: newPatientForm.address,
           phone: newPatientForm.phone,
           nationalId: newPatientForm.nationalId,
+          email: newPatientForm.email,
+          password: newPatientForm.password,
         })
 
         setNewPatientForm({
@@ -154,15 +182,58 @@ export function DoctorDashboard() {
           address: "",
           phone: "",
           nationalId: "",
+          email: "",
+          password: "",
         })
         setShowAddPatientDialog(false)
         refetchPatients() // Refresh the patients list
         console.log("[API] Added new patient:", newPatient)
+        alert("Patient created successfully! They can now log in with their email and password.")
       } catch (error) {
         console.error("[API] Failed to add patient:", error)
+        alert("Failed to create patient. Please try again.")
       }
+    } else {
+      alert("Please fill in all required fields including email and password.")
     }
   }, [newPatientForm, refetchPatients])
+
+  const handleAssignVisit = useCallback(async () => {
+    if (!newVisitForm.patientId || !newVisitForm.vhvId || !newVisitForm.visitType) {
+      alert("Please fill in all required fields")
+      return
+    }
+
+    try {
+      console.log("[API] Assigning visit:", newVisitForm)
+      
+      // Create a new assignment between patient and VHV
+      const assignment = await patientsApi.assignVHV(
+        newVisitForm.patientId,
+        newVisitForm.vhvId,
+        currentUser?.id || '', // Current doctor's ID
+        [] // No tasks for now
+      )
+
+      // Reset form and close dialog
+      setNewVisitForm({
+        patientId: "",
+        visitType: "",
+        vhvId: "",
+        notes: "",
+      })
+      setShowNewVisitDialog(false)
+      
+      // Refresh data
+      refetchPatients()
+      
+      console.log("[API] Visit assigned successfully:", assignment)
+      alert("Visit assigned successfully!")
+    } catch (error) {
+      console.error("[API] Failed to assign visit:", error)
+      alert("Failed to assign visit. Please try again.")
+    }
+  }, [newVisitForm, refetchPatients])
 
   const handleSignOut = () => {
     clearCurrentUser()
@@ -193,14 +264,17 @@ export function DoctorDashboard() {
                     Assign Patient
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="sm:max-w-[600px]">
+                <DialogContent className="max-w-[95vw] w-full max-h-[90vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle>Assign Patient to VHV</DialogTitle>
                     <DialogDescription>
                       Assign a patient to a Village Health Volunteer with specific tasks.
                     </DialogDescription>
                   </DialogHeader>
-                  <PatientAssignment onClose={() => setShowAssignPatientDialog(false)} />
+                  <PatientAssignment 
+                    doctorId={currentUser?.id}
+                    onAssignmentComplete={() => setShowAssignPatientDialog(false)}
+                  />
                 </DialogContent>
               </Dialog>
 
@@ -211,12 +285,12 @@ export function DoctorDashboard() {
                     Manage Tasks
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="sm:max-w-[800px]">
+                <DialogContent className="max-w-[95vw] w-full max-h-[90vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle>Task Management</DialogTitle>
                     <DialogDescription>Create and manage tasks for Village Health Volunteers.</DialogDescription>
                   </DialogHeader>
-                  <TaskManagement onClose={() => setShowTaskManagementDialog(false)} />
+                  <TaskManagement doctorId={currentUser?.id} />
                 </DialogContent>
               </Dialog>
 
@@ -227,7 +301,7 @@ export function DoctorDashboard() {
                     Start New Patient Visit
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="sm:max-w-[500px]">
+                <DialogContent className="max-w-[90vw] w-full max-h-[90vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle>Start New Patient Visit</DialogTitle>
                     <DialogDescription>
@@ -237,9 +311,12 @@ export function DoctorDashboard() {
                   <div className="grid gap-4 py-4">
                     <div className="grid grid-cols-4 items-center gap-4">
                       <Label htmlFor="patient-select" className="text-right">
-                        Patient
+                        Patient *
                       </Label>
-                      <Select>
+                      <Select 
+                        value={newVisitForm.patientId} 
+                        onValueChange={(value) => setNewVisitForm(prev => ({ ...prev, patientId: value }))}
+                      >
                         <SelectTrigger className="col-span-3">
                           <SelectValue placeholder="Select patient" />
                         </SelectTrigger>
@@ -254,9 +331,12 @@ export function DoctorDashboard() {
                     </div>
                     <div className="grid grid-cols-4 items-center gap-4">
                       <Label htmlFor="visit-type" className="text-right">
-                        Visit Type
+                        Visit Type *
                       </Label>
-                      <Select>
+                      <Select 
+                        value={newVisitForm.visitType} 
+                        onValueChange={(value) => setNewVisitForm(prev => ({ ...prev, visitType: value }))}
+                      >
                         <SelectTrigger className="col-span-3">
                           <SelectValue placeholder="Select visit type" />
                         </SelectTrigger>
@@ -269,6 +349,26 @@ export function DoctorDashboard() {
                       </Select>
                     </div>
                     <div className="grid grid-cols-4 items-center gap-4">
+                      <Label htmlFor="vhv-select" className="text-right">
+                        VHV *
+                      </Label>
+                      <Select 
+                        value={newVisitForm.vhvId} 
+                        onValueChange={(value) => setNewVisitForm(prev => ({ ...prev, vhvId: value }))}
+                      >
+                        <SelectTrigger className="col-span-3">
+                          <SelectValue placeholder="Select VHV" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {(availableVHVs || []).map((vhv: any) => (
+                            <SelectItem key={vhv.id} value={vhv.id.toString()}>
+                              {vhv.email} - {vhv.role}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid grid-cols-4 items-center gap-4">
                       <Label htmlFor="instructions" className="text-right">
                         Instructions
                       </Label>
@@ -276,6 +376,8 @@ export function DoctorDashboard() {
                         id="instructions"
                         placeholder="Special instructions for the VHV..."
                         className="col-span-3"
+                        value={newVisitForm.notes}
+                        onChange={(e) => setNewVisitForm(prev => ({ ...prev, notes: e.target.value }))}
                       />
                     </div>
                   </div>
@@ -283,7 +385,7 @@ export function DoctorDashboard() {
                     <Button variant="outline" onClick={() => setShowNewVisitDialog(false)}>
                       Cancel
                     </Button>
-                    <Button onClick={() => setShowNewVisitDialog(false)}>
+                    <Button onClick={handleAssignVisit}>
                       <UserPlus className="h-4 w-4 mr-2" />
                       Assign Visit
                     </Button>
@@ -595,7 +697,7 @@ export function DoctorDashboard() {
                         Add Patient
                       </Button>
                     </DialogTrigger>
-                    <DialogContent className="sm:max-w-[425px]">
+                    <DialogContent className="max-w-[90vw] w-full max-h-[90vh] overflow-y-auto">
                       <DialogHeader>
                         <DialogTitle>Add New Patient</DialogTitle>
                         <DialogDescription>
@@ -668,6 +770,32 @@ export function DoctorDashboard() {
                             className="col-span-3"
                             value={newPatientForm.phone}
                             onChange={(e) => setNewPatientForm((prev) => ({ ...prev, phone: e.target.value }))}
+                          />
+                        </div>
+                        <div className="grid grid-cols-4 items-center gap-4">
+                          <Label htmlFor="email" className="text-right">
+                            Email *
+                          </Label>
+                          <Input
+                            id="email"
+                            type="email"
+                            className="col-span-3"
+                            value={newPatientForm.email}
+                            onChange={(e) => setNewPatientForm((prev) => ({ ...prev, email: e.target.value }))}
+                            placeholder="patient@example.com"
+                          />
+                        </div>
+                        <div className="grid grid-cols-4 items-center gap-4">
+                          <Label htmlFor="password" className="text-right">
+                            Password *
+                          </Label>
+                          <Input
+                            id="password"
+                            type="password"
+                            className="col-span-3"
+                            value={newPatientForm.password}
+                            onChange={(e) => setNewPatientForm((prev) => ({ ...prev, password: e.target.value }))}
+                            placeholder="Enter password for login"
                           />
                         </div>
                       </div>

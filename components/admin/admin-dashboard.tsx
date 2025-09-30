@@ -57,12 +57,79 @@ export function AdminDashboard() {
   const loadAdminData = async () => {
     try {
       setLoading(true)
-      const [usersResponse, statsData] = await Promise.all([adminApi.getUsers(), adminApi.getDashboardStats()])
+      
+      console.log('Admin Dashboard: Starting data load...')
+      
+      // Get data from individual role tables instead of unified users table
+      const [adminsResponse, doctorsResponse, vhvsResponse, patientsResponse, statsResponse] = await Promise.all([
+        fetch('/api/admin/admins'),
+        fetch('/api/admin/doctors'),
+        fetch('/api/admin/vhvs'),
+        fetch('/api/admin/patients'),
+        fetch('/api/admin/stats')
+      ])
 
-      // Extract users array from the response
-      const usersArray = Array.isArray(usersResponse) ? usersResponse : []
-      setUsers(usersArray)
-      setStats(statsData || {})
+      console.log('Admin Dashboard: API responses received', {
+        adminsStatus: adminsResponse.status,
+        doctorsStatus: doctorsResponse.status,
+        vhvsStatus: vhvsResponse.status,
+        patientsStatus: patientsResponse.status,
+        statsStatus: statsResponse.status
+      })
+
+      // Check for errors
+      if (!adminsResponse.ok) {
+        const error = await adminsResponse.text()
+        console.error('Admins API error:', error)
+        throw new Error(`Admins API failed: ${adminsResponse.status}`)
+      }
+      if (!doctorsResponse.ok) {
+        const error = await doctorsResponse.text()
+        console.error('Doctors API error:', error)
+        throw new Error(`Doctors API failed: ${doctorsResponse.status}`)
+      }
+      if (!vhvsResponse.ok) {
+        const error = await vhvsResponse.text()
+        console.error('VHVs API error:', error)
+        throw new Error(`VHVs API failed: ${vhvsResponse.status}`)
+      }
+      if (!patientsResponse.ok) {
+        const error = await patientsResponse.text()
+        console.error('Patients API error:', error)
+        throw new Error(`Patients API failed: ${patientsResponse.status}`)
+      }
+      if (!statsResponse.ok) {
+        const error = await statsResponse.text()
+        console.error('Stats API error:', error)
+        throw new Error(`Stats API failed: ${statsResponse.status}`)
+      }
+
+      // Parse responses
+      const adminsData = await adminsResponse.json()
+      const doctorsData = await doctorsResponse.json()
+      const vhvsData = await vhvsResponse.json()
+      const patientsData = await patientsResponse.json()
+      const statsData = await statsResponse.json()
+
+      // Combine all users into a single array
+      const allUsers = [
+        ...adminsData.map((user: any) => ({ ...user, role: 'ADMIN' })),
+        ...doctorsData.map((user: any) => ({ ...user, role: 'DOCTOR' })),
+        ...vhvsData.map((user: any) => ({ ...user, role: 'VHV' })),
+        ...patientsData.map((user: any) => ({ ...user, role: 'PATIENT' }))
+      ]
+
+      console.log('Admin Dashboard: Data loaded:', {
+        admins: adminsData.length,
+        doctors: doctorsData.length,
+        vhvs: vhvsData.length,
+        patients: patientsData.length,
+        totalUsers: allUsers.length,
+        stats: statsData
+      })
+
+      setUsers(allUsers)
+      setStats(statsData)
     } catch (error) {
       console.error("Failed to load admin data:", error)
       // Fallback to mock data
@@ -73,10 +140,27 @@ export function AdminDashboard() {
           role: "DOCTOR",
           firstName: "Dr. Michael",
           lastName: "Chen",
+          name: "Dr. Michael Chen",
           status: "active",
         },
-        { id: 2, email: "vhv1@example.com", role: "VHV", firstName: "Maria", lastName: "Santos", status: "active" },
-        { id: 3, email: "vhv2@example.com", role: "VHV", firstName: "Carlos", lastName: "Rodriguez", status: "active" },
+        { 
+          id: 2, 
+          email: "vhv1@example.com", 
+          role: "VHV", 
+          firstName: "Maria", 
+          lastName: "Santos", 
+          name: "Maria Santos",
+          status: "active" 
+        },
+        { 
+          id: 3, 
+          email: "vhv2@example.com", 
+          role: "VHV", 
+          firstName: "Carlos", 
+          lastName: "Rodriguez", 
+          name: "Carlos Rodriguez",
+          status: "active" 
+        },
       ])
       setStats({
         totalUsers: 3,
@@ -481,6 +565,7 @@ export function AdminDashboard() {
           <EmergencyAlertManagement />
         </TabsContent>
       </Tabs>
+
     </div>
   )
 }

@@ -34,8 +34,34 @@ export function useApiData<T>(
   }, [fetchData]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData, ...dependencies]);
+    let isMounted = true;
+    
+    const executeApiCall = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const result = await apiCall();
+        if (isMounted) {
+          setData(result);
+        }
+      } catch (err) {
+        if (isMounted) {
+          console.error('API call failed:', err);
+          setError(err instanceof Error ? err.message : 'An unknown error occurred');
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    executeApiCall();
+
+    return () => {
+      isMounted = false;
+    };
+  }, dependencies); // 只依賴於 dependencies
 
   return {
     data,

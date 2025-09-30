@@ -40,7 +40,7 @@ export function TaskManagement({ doctorId, patientId, vhvId }: TaskManagementPro
     description: "",
     patientId: patientId || "",
     vhvId: vhvId || "",
-    priority: "MEDIUM" as "LOW" | "MEDIUM" | "HIGH" | "URGENT",
+    priority: "medium" as "low" | "medium" | "high" | "urgent",
     dueDate: "",
   })
 
@@ -52,23 +52,37 @@ export function TaskManagement({ doctorId, patientId, vhvId }: TaskManagementPro
       return tasksApi.getByPatient(patientId)
     } else if (doctorId || currentUser?.id) {
       // Get all tasks created by this doctor
-      const { getTasksByDoctor } = await import("@/lib/mock-data")
-      return getTasksByDoctor(doctorId || currentUser?.id)
+      const effectiveDoctorId = doctorId || currentUser?.id
+      if (effectiveDoctorId) {
+        return tasksApi.getByDoctor(effectiveDoctorId)
+      }
     }
     return []
   }, [vhvId, patientId, doctorId, currentUser?.id])
 
   const { data: tasks, loading: tasksLoading, refetch: refetchTasks } = useApiData(getTasks, [])
+  
+  // Debug logging for tasks
+  console.log('TaskManagement - tasks:', tasks)
+  console.log('TaskManagement - tasksLoading:', tasksLoading)
+  console.log('TaskManagement - currentUser:', currentUser)
+  console.log('TaskManagement - doctorId:', doctorId)
 
   // Get available patients and VHVs for task creation
   const getAvailablePatients = useCallback(async () => {
-    if (doctorId || currentUser?.id) {
-      return patientsApi.getAssignments(doctorId || currentUser?.id)
+    const effectiveDoctorId = doctorId || currentUser?.id
+    if (effectiveDoctorId) {
+      return patientsApi.getAssignments(effectiveDoctorId)
     }
     return []
   }, [doctorId, currentUser?.id])
 
-  const { data: assignments } = useApiData(getAvailablePatients, [])
+  const { data: assignments, loading: assignmentsLoading, error: assignmentsError } = useApiData(getAvailablePatients, [])
+  
+  // Debug logging
+  console.log('TaskManagement - assignments:', assignments)
+  console.log('TaskManagement - assignmentsLoading:', assignmentsLoading)
+  console.log('TaskManagement - assignmentsError:', assignmentsError)
 
   const getAvailableVHVs = useCallback(async () => {
     return patientsApi.getAvailableVHVs()
@@ -93,7 +107,7 @@ export function TaskManagement({ doctorId, patientId, vhvId }: TaskManagementPro
         description: "",
         patientId: patientId || "",
         vhvId: vhvId || "",
-        priority: "MEDIUM",
+        priority: "medium",
         dueDate: "",
       })
       setShowCreateDialog(false)
@@ -167,11 +181,11 @@ export function TaskManagement({ doctorId, patientId, vhvId }: TaskManagementPro
     }) || []
 
   // Calculate statistics
-  const pendingTasks = tasks?.filter((t: any) => t.status === "PENDING").length || 0
-  const inProgressTasks = tasks?.filter((t: any) => t.status === "IN_PROGRESS").length || 0
-  const completedTasks = tasks?.filter((t: any) => t.status === "COMPLETED").length || 0
+  const pendingTasks = tasks?.filter((t: any) => t.status === "pending").length || 0
+  const inProgressTasks = tasks?.filter((t: any) => t.status === "in_progress").length || 0
+  const completedTasks = tasks?.filter((t: any) => t.status === "completed").length || 0
   const overdueTasks =
-    tasks?.filter((t: any) => t.dueDate && new Date(t.dueDate) < new Date() && t.status !== "COMPLETED").length || 0
+    tasks?.filter((t: any) => t.dueDate && new Date(t.dueDate) < new Date() && t.status !== "completed").length || 0
 
   const getPatientName = (patientId: string) => {
     const assignment = assignments?.find((a: any) => a.patient?.id === patientId)
@@ -180,18 +194,18 @@ export function TaskManagement({ doctorId, patientId, vhvId }: TaskManagementPro
 
   const getVHVName = (vhvId: string) => {
     const vhv = availableVHVs?.find((v: any) => v.id === vhvId)
-    return vhv?.name || vhv?.email?.split("@")[0] || "Unknown VHV"
+    return vhv?.email?.split("@")[0] || "Unknown VHV"
   }
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
-      case "URGENT":
+      case "urgent":
         return "destructive"
-      case "HIGH":
+      case "high":
         return "destructive"
-      case "MEDIUM":
+      case "medium":
         return "secondary"
-      case "LOW":
+      case "low":
         return "outline"
       default:
         return "outline"
@@ -200,11 +214,11 @@ export function TaskManagement({ doctorId, patientId, vhvId }: TaskManagementPro
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "COMPLETED":
+      case "completed":
         return "default"
-      case "IN_PROGRESS":
+      case "in_progress":
         return "secondary"
-      case "PENDING":
+      case "pending":
         return "outline"
       default:
         return "outline"
@@ -312,11 +326,22 @@ export function TaskManagement({ doctorId, patientId, vhvId }: TaskManagementPro
                           <SelectValue placeholder="Select patient" />
                         </SelectTrigger>
                         <SelectContent>
-                          {assignments?.map((assignment: any) => (
-                            <SelectItem key={assignment.patient?.id} value={assignment.patient?.id}>
-                              {assignment.patient?.firstName} {assignment.patient?.lastName}
-                            </SelectItem>
-                          ))}
+                          {(() => {
+                            const uniquePatients = assignments?.reduce((uniquePatients: any[], assignment: any) => {
+                              if (assignment.patient && !uniquePatients.find(p => p.id === assignment.patient.id)) {
+                                uniquePatients.push(assignment.patient)
+                              }
+                              return uniquePatients
+                            }, []) || []
+                            
+                            console.log('TaskManagement - uniquePatients:', uniquePatients)
+                            
+                            return uniquePatients.map((patient: any) => (
+                              <SelectItem key={patient.id} value={patient.id}>
+                                {patient.firstName} {patient.lastName}
+                              </SelectItem>
+                            ))
+                          })()}
                         </SelectContent>
                       </Select>
                     </div>
@@ -333,7 +358,7 @@ export function TaskManagement({ doctorId, patientId, vhvId }: TaskManagementPro
                         <SelectContent>
                           {availableVHVs?.map((vhv: any) => (
                             <SelectItem key={vhv.id} value={vhv.id}>
-                              {vhv.name || vhv.email.split("@")[0]}
+                              {vhv.email.split("@")[0]}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -351,10 +376,10 @@ export function TaskManagement({ doctorId, patientId, vhvId }: TaskManagementPro
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="LOW">Low</SelectItem>
-                          <SelectItem value="MEDIUM">Medium</SelectItem>
-                          <SelectItem value="HIGH">High</SelectItem>
-                          <SelectItem value="URGENT">Urgent</SelectItem>
+                          <SelectItem value="low">Low</SelectItem>
+                          <SelectItem value="medium">Medium</SelectItem>
+                          <SelectItem value="high">High</SelectItem>
+                          <SelectItem value="urgent">Urgent</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -392,9 +417,9 @@ export function TaskManagement({ doctorId, patientId, vhvId }: TaskManagementPro
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="PENDING">Pending</SelectItem>
-                <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
-                <SelectItem value="COMPLETED">Completed</SelectItem>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="in_progress">In Progress</SelectItem>
+                <SelectItem value="completed">Completed</SelectItem>
               </SelectContent>
             </Select>
             <Select value={filterPriority} onValueChange={setFilterPriority}>
@@ -403,10 +428,10 @@ export function TaskManagement({ doctorId, patientId, vhvId }: TaskManagementPro
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Priority</SelectItem>
-                <SelectItem value="URGENT">Urgent</SelectItem>
-                <SelectItem value="HIGH">High</SelectItem>
-                <SelectItem value="MEDIUM">Medium</SelectItem>
-                <SelectItem value="LOW">Low</SelectItem>
+                <SelectItem value="urgent">Urgent</SelectItem>
+                <SelectItem value="high">High</SelectItem>
+                <SelectItem value="medium">Medium</SelectItem>
+                <SelectItem value="low">Low</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -419,18 +444,18 @@ export function TaskManagement({ doctorId, patientId, vhvId }: TaskManagementPro
               <div className="text-center py-4 text-muted-foreground">No tasks found</div>
             ) : (
               filteredTasks.map((task: any) => {
-                const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && task.status !== "COMPLETED"
+                const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && task.status !== "completed"
                 return (
                   <Card
                     key={task.id}
                     className={`border-l-4 ${
-                      task.status === "COMPLETED"
+                      task.status === "completed"
                         ? "border-l-green-500"
-                        : task.status === "IN_PROGRESS"
+                        : task.status === "in_progress"
                           ? "border-l-yellow-500"
                           : isOverdue
                             ? "border-l-red-500"
-                            : task.priority === "HIGH" || task.priority === "URGENT"
+                            : task.priority === "high" || task.priority === "urgent"
                               ? "border-l-orange-500"
                               : "border-l-blue-500"
                     }`}
@@ -463,7 +488,7 @@ export function TaskManagement({ doctorId, patientId, vhvId }: TaskManagementPro
                           </div>
                         </div>
                         <div className="flex items-center gap-2 ml-4">
-                          {task.status !== "COMPLETED" && (
+                          {task.status !== "completed" && (
                             <>
                               <Button variant="outline" size="sm" onClick={() => openEditDialog(task)}>
                                 <Edit className="h-4 w-4" />
@@ -530,10 +555,10 @@ export function TaskManagement({ doctorId, patientId, vhvId }: TaskManagementPro
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="LOW">Low</SelectItem>
-                    <SelectItem value="MEDIUM">Medium</SelectItem>
-                    <SelectItem value="HIGH">High</SelectItem>
-                    <SelectItem value="URGENT">Urgent</SelectItem>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="urgent">Urgent</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

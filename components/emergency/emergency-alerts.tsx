@@ -171,6 +171,19 @@ export function EmergencyAlerts({ userId, userRole, showActiveOnly = false }: Em
     }
   }
 
+  const handleCancel = async (alertId: string) => {
+    try {
+      setIsResponding(true)
+      await emergencyApi.cancel(alertId, "Cancelled by healthcare provider")
+      await fetchAlerts()
+    } catch (error) {
+      console.error("[v0] Failed to cancel alert:", error)
+      alert("Failed to cancel alert. Please try again.")
+    } finally {
+      setIsResponding(false)
+    }
+  }
+
   const getPriorityColor = (priority: EmergencyPriority) => {
     switch (priority) {
       case EmergencyPriority.CRITICAL:
@@ -331,6 +344,14 @@ export function EmergencyAlerts({ userId, userRole, showActiveOnly = false }: Em
                           handleResolve={handleResolve}
                           isResponding={isResponding}
                         />
+                        <Button
+                          onClick={() => handleCancel(alert.id)}
+                          disabled={isResponding}
+                          variant="outline"
+                          className="border-red-500 text-red-600 hover:bg-red-50"
+                        >
+                          Cancel
+                        </Button>
                       </>
                     )}
 

@@ -46,10 +46,17 @@ export function EmergencyButton({
       try {
         setIsLoadingStatus(true)
         const alerts = await emergencyApi.getByPatient(patientId)
-        const activeAlert =
-          alerts
-            .filter((alert) => alert.status === EmergencyStatus.ACTIVE || alert.status === EmergencyStatus.ACKNOWLEDGED)
-            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0] || null
+        
+        // Get the most recent alert (regardless of status)
+        const latestAlert = alerts
+          .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0] || null
+        
+        // Only set activeEmergency if the latest alert is ACTIVE or ACKNOWLEDGED
+        // If the latest alert is RESOLVED or CANCELLED, clear activeEmergency
+        const activeAlert = latestAlert && 
+          (latestAlert.status === EmergencyStatus.ACTIVE || latestAlert.status === EmergencyStatus.ACKNOWLEDGED) 
+          ? latestAlert 
+          : null
 
         setActiveEmergency(activeAlert)
         console.log("[v0] Active emergency status:", activeAlert ? "Active" : "None")
@@ -102,6 +109,8 @@ export function EmergencyButton({
       setDescription("")
       setLocation("")
       setPriority(EmergencyPriority.HIGH)
+      
+      // Close dialog after successful submission
       setIsOpen(false)
 
       // Show success feedback
@@ -118,25 +127,21 @@ export function EmergencyButton({
     if (!activeEmergency) return
 
     try {
+      console.log("[v0] Cancelling emergency alert:", activeEmergency.id)
       await emergencyApi.cancel(activeEmergency.id, "Cancelled by patient")
+      
+      // Immediately clear the active emergency
       setActiveEmergency(null)
-      setTimeout(() => {
-        const checkStatus = async () => {
-          try {
-            const alerts = await emergencyApi.getByPatient(patientId)
-            const activeAlert =
-              alerts
-                .filter(
-                  (alert) => alert.status === EmergencyStatus.ACTIVE || alert.status === EmergencyStatus.ACKNOWLEDGED,
-                )
-                .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0] || null
-            setActiveEmergency(activeAlert)
-          } catch (error) {
-            console.error("[v0] Failed to refresh emergency status:", error)
-          }
-        }
-        checkStatus()
-      }, 1000)
+      
+      // Reset form state
+      setDescription("")
+      setLocation("")
+      setPriority(EmergencyPriority.HIGH)
+      
+      console.log("[v0] Emergency alert cancelled successfully")
+      
+      // The status will be automatically refreshed by the 30-second interval in useEffect
+      
       alert("Emergency alert cancelled.")
     } catch (error) {
       console.error("[v0] Failed to cancel emergency:", error)
@@ -184,6 +189,10 @@ export function EmergencyButton({
           return "Emergency Alert Active"
         case EmergencyStatus.ACKNOWLEDGED:
           return "Emergency Acknowledged"
+        case EmergencyStatus.RESOLVED:
+          return "Emergency Resolved"
+        case EmergencyStatus.CANCELLED:
+          return "Emergency Cancelled"
         default:
           return "Emergency Status Unknown"
       }
@@ -285,10 +294,10 @@ export function EmergencyButton({
                 <Button
                   size="lg"
                   className="bg-red-600 hover:bg-red-700 text-white font-bold px-8 py-3 text-lg"
-                  disabled={disabled}
+                  disabled={disabled || !!activeEmergency}
                 >
                   <Zap className="h-5 w-5 mr-2" />
-                  EMERGENCY
+                  {activeEmergency ? "EMERGENCY SENT" : "EMERGENCY"}
                 </Button>
               </AlertDialogTrigger>
 

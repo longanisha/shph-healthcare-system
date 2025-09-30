@@ -17,7 +17,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Plus } from "lucide-react"
+import { Plus, Eye } from "lucide-react"
 import {
   Users,
   CheckCircle,
@@ -46,6 +46,15 @@ export function VHVDashboard() {
   const router = useRouter()
   const [currentUser, setCurrentUser] = useState(getCurrentUserFromStorage())
   const [expandedPatient, setExpandedPatient] = useState<string | null>(null)
+
+  // Check and fix user ID if it's a hardcoded string
+  useEffect(() => {
+    if (currentUser?.id && (currentUser.id === 'doctor_id' || currentUser.id === 'admin_id' || currentUser.id === 'vhv_id' || currentUser.id === 'patient_id')) {
+      console.log('Detected hardcoded user ID, clearing localStorage and redirecting to login')
+      clearCurrentUser()
+      router.push('/login')
+    }
+  }, [currentUser?.id, router])
   const [selectedPatientForReview, setSelectedPatientForReview] = useState<any>(null)
   const [reviewFormData, setReviewFormData] = useState<any>(null)
   const [reviewIntakeId, setReviewIntakeId] = useState<string | null>(null)
@@ -92,9 +101,8 @@ export function VHVDashboard() {
     if (!currentUser?.id) return []
 
     try {
-      // Get patients assigned to this VHV using the mock data helper
-      const { getPatientsByVHV } = await import("@/lib/mock-data")
-      return getPatientsByVHV(currentUser.id)
+      // Get patients assigned to this VHV from Supabase
+      return await patientsApi.getAssignmentsByVHV(currentUser.id)
     } catch (error) {
       console.error("Error fetching assigned patients:", error)
       return []
@@ -107,6 +115,12 @@ export function VHVDashboard() {
     error: patientsError,
     refetch: refetchPatients,
   } = useApiData(getAssignedPatients, [])
+  
+  // Debug logging
+  console.log('VHVDashboard - currentUser:', currentUser)
+  console.log('VHVDashboard - assignedPatients:', assignedPatients)
+  console.log('VHVDashboard - patientsLoading:', patientsLoading)
+  console.log('VHVDashboard - patientsError:', patientsError)
 
   const getTasks = useCallback(async () => {
     if (!currentUser?.id) return []
@@ -156,11 +170,14 @@ export function VHVDashboard() {
   const handleOpenDataForm = async (patient: any) => {
     try {
       // Create a new intake submission when starting data collection
-      const newIntake = await intakesApi.create(patient.id)
+      const newIntake = await intakesApi.create(patient.id, currentUser?.id)
 
       setCurrentIntakeId(newIntake.id)
       setSelectedPatientForForm(patient)
       setShowDataForm(true)
+      
+      // Refresh assigned patients data to show updated intake status
+      refetchPatients()
     } catch (error) {
       console.error("Failed to create intake:", error)
       // Still allow form to open even if API fails
@@ -181,6 +198,9 @@ export function VHVDashboard() {
       setCurrentIntakeId(intakeId)
       setSelectedPatientForForm(patient)
       setShowDataForm(true)
+      
+      // Refresh assigned patients data
+      refetchPatients()
     } catch (error) {
       console.error("Failed to load offline data:", error)
       // Still allow form to open even if offline data fails
@@ -195,6 +215,19 @@ export function VHVDashboard() {
     setSelectedPatientForForm(null)
     setCompletedSections([])
     setCurrentIntakeId(null)
+  }
+
+  const handleOpenPatientReview = async (patient: any, intake: any) => {
+    try {
+      setSelectedPatientForReview(patient)
+      setReviewIntakeId(intake.id)
+      setShowReviewPage(true)
+      
+      // Refresh assigned patients data
+      refetchPatients()
+    } catch (error) {
+      console.error("Failed to open patient review:", error)
+    }
   }
 
   const handleFormComplete = async () => {
@@ -284,13 +317,22 @@ export function VHVDashboard() {
   }
 
   // Calculate statistics from real data
-  const activePatients = assignedPatients?.filter((p: any) => p.assignment?.status === "ACTIVE") || []
-  const completedVisits = assignedPatients?.filter((p: any) => p.lastVisit).length || 0
-  const pendingReviews = assignedPatients?.filter((p: any) => p.status === "pending_review").length || 0
+  const activePatients = assignedPatients?.filter((assignment: any) => assignment.status === "active") || []
+  const completedVisits = assignedPatients?.filter((assignment: any) => assignment.patient?.lastVisit).length || 0
+  const pendingReviews = assignedPatients?.filter((assignment: any) => assignment.patient?.status === "pending_review").length || 0
 
-  const pendingTasks = tasks?.filter((t: any) => t.status === "PENDING").length || 0
-  const inProgressTasks = tasks?.filter((t: any) => t.status === "IN_PROGRESS").length || 0
-  const completedTasks = tasks?.filter((t: any) => t.status === "COMPLETED").length || 0
+  const pendingTasks = tasks?.filter((t: any) => t.status === "pending").length || 0
+  const inProgressTasks = tasks?.filter((t: any) => t.status === "in_progress").length || 0
+  const completedTasks = tasks?.filter((t: any) => t.status === "completed").length || 0
+
+  // Debug logging for statistics
+  console.log('VHVDashboard - Statistics:')
+  console.log('  activePatients:', activePatients.length)
+  console.log('  completedVisits:', completedVisits)
+  console.log('  pendingReviews:', pendingReviews)
+  console.log('  pendingTasks:', pendingTasks)
+  console.log('  inProgressTasks:', inProgressTasks)
+  console.log('  completedTasks:', completedTasks)
 
   if (showReviewPage && selectedPatientForReview) {
     return (
@@ -563,15 +605,19 @@ export function VHVDashboard() {
                 ) : !assignedPatients || assignedPatients.length === 0 ? (
                   <div className="text-center py-4 text-muted-foreground">No patients assigned</div>
                 ) : (
-                  assignedPatients.map((patient: any) => (
-                    <Card key={patient.id} className="border-l-4 border-l-blue-500">
+                  assignedPatients.map((assignment: any) => {
+                    const patient = assignment.patient
+                    if (!patient) return null
+                    
+                    return (
+                    <Card key={assignment.id} className="border-l-4 border-l-blue-500">
                       <CardContent className="pt-4">
                         <div
                           className="flex items-center justify-between cursor-pointer"
-                          onClick={() => togglePatientExpansion(patient.id)}
+                          onClick={() => togglePatientExpansion(assignment.id)}
                         >
                           <div className="flex items-center gap-3">
-                            {expandedPatient === patient.id ? (
+                            {expandedPatient === assignment.id ? (
                               <ChevronDown className="h-4 w-4" />
                             ) : (
                               <ChevronRight className="h-4 w-4" />
@@ -581,19 +627,19 @@ export function VHVDashboard() {
                                 <h3 className="font-semibold">
                                   {patient.firstName} {patient.lastName}
                                 </h3>
-                                <Badge variant={patient.assignment?.status === "ACTIVE" ? "default" : "secondary"}>
-                                  {patient.assignment?.status || "ACTIVE"}
+                                <Badge variant={assignment.status === "active" ? "default" : "secondary"}>
+                                  {assignment.status || "active"}
                                 </Badge>
-                                {patient.tasks && patient.tasks.length > 0 && (
+                                {assignment.tasks && assignment.tasks.length > 0 && (
                                   <Badge variant="outline">
-                                    {patient.tasks.length} task{patient.tasks.length !== 1 ? "s" : ""}
+                                    {assignment.tasks.length} task{assignment.tasks.length !== 1 ? "s" : ""}
                                   </Badge>
                                 )}
                               </div>
                               <p className="text-sm text-muted-foreground">
                                 Assigned:{" "}
-                                {patient.assignment?.assignedAt
-                                  ? new Date(patient.assignment.assignedAt).toLocaleDateString()
+                                {assignment.assignedAt
+                                  ? new Date(assignment.assignedAt).toLocaleDateString()
                                   : "Unknown"}
                               </p>
                             </div>
@@ -656,11 +702,19 @@ export function VHVDashboard() {
                                   </>
                                 )
                               } else {
-                                // Intake already submitted - show status
+                                // Intake already submitted - show View Visit button
                                 return (
-                                  <Badge variant="secondary" className="text-xs">
-                                    Submitted for Review
-                                  </Badge>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      handleOpenPatientReview(patient, latestIntake)
+                                    }}
+                                  >
+                                    <Eye className="h-4 w-4 mr-2" />
+                                    View Visit
+                                  </Button>
                                 )
                               }
                             })()}
@@ -694,11 +748,11 @@ export function VHVDashboard() {
                               </div>
                             </div>
 
-                            {patient.tasks && patient.tasks.length > 0 && (
+                            {assignment.tasks && assignment.tasks.length > 0 && (
                               <div className="mt-4 pt-4 border-t">
                                 <h5 className="font-medium text-sm mb-2">Patient Tasks</h5>
                                 <div className="space-y-2">
-                                  {patient.tasks.map((task: any) => (
+                                  {assignment.tasks.map((task: any) => (
                                     <div
                                       key={task.id}
                                       className="flex items-center justify-between p-2 bg-muted rounded"
@@ -710,18 +764,18 @@ export function VHVDashboard() {
                                       <div className="flex items-center gap-2">
                                         <Badge
                                           variant={
-                                            task.status === "COMPLETED"
+                                            task.status === "completed"
                                               ? "default"
-                                              : task.status === "IN_PROGRESS"
+                                              : task.status === "in_progress"
                                                 ? "secondary"
-                                                : task.priority === "HIGH" || task.priority === "URGENT"
+                                                : task.priority === "high" || task.priority === "urgent"
                                                   ? "destructive"
                                                   : "outline"
                                           }
                                         >
                                           {task.status}
                                         </Badge>
-                                        {task.status !== "COMPLETED" && (
+                                        {task.status !== "completed" && (
                                           <Button
                                             size="sm"
                                             variant="outline"
@@ -740,7 +794,8 @@ export function VHVDashboard() {
                         )}
                       </CardContent>
                     </Card>
-                  ))
+                    )
+                  })
                 )}
               </CardContent>
             </Card>
